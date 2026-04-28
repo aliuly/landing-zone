@@ -1,0 +1,146 @@
+#cloud-config
+users:
+- name: ${user}
+  passwd: "${passwd}"
+  ssh_authorized_keys:
+%{ for key in ssh_keys ~}
+  - "${key}"
+%{ endfor ~}
+  groups: sudo
+  shell: /bin/bash
+  sudo: ['ALL=(ALL) NOPASSWD:ALL']
+  lock_passwd: false
+%{ for u in more_users ~}
+- name: ${u.name}
+  passwd: "${u.passwd}"
+  gecos: "${u.gecos}"
+  ssh_authorized_keys:
+%{ for key in u.ssh_keys ~}
+  - "${key}"
+%{ endfor ~}
+  groups: sudo
+  shell: /bin/bash
+  sudo: ['ALL=(ALL) NOPASSWD:ALL']
+  lock_passwd: false
+%{ endfor ~}
+
+disable_root: false
+# Do apt-get update
+#~ package_update: true
+#~ package_reboot_if_required: true
+#~ packages:
+#   ... removed ... doesn't seem to work...
+
+write_files:
+- owner: root:root
+  path: /etc/ssh/sshd_config.d/casio.conf
+  permissions: '0644'
+  content: |
+    Port 22
+    Port 443
+    AllowTcpForwarding yes
+    X11Forwarding yes
+- owner: root:root
+  path: /etc/systemd/system/shutdown-at.service
+  permissions: '0644'
+  content: |
+    [Unit]
+    Description=Scheduled system shutdown
+    [Service]
+    Type=oneshot
+    ExecStart=/usr/bin/systemctl poweroff
+- owner: root:root
+  path: /etc/systemd/system/shutdown-at.timer
+  permissions: '0644'
+  content: |
+    [Unit]
+    Description=Daily scheduled shutdown
+    [Timer]
+    OnCalendar=01:00
+    Persistent=false
+    [Install]
+    WantedBy=timers.target
+- owner: root:root
+  path: /root/pkgs.txt
+  permissions: '0644'
+  content: |
+    - pwgen
+    - micro
+    - python3-venv
+    - zip
+    - dos2unix
+    # xfce desktop
+    - xfce4
+    - xfce4-goodies
+    - gnome-icon-theme
+    - tango-icon-theme
+    - # basic apps
+    - firefox
+    - geany
+    - tigervnc-viewer
+    # Complete the desktop
+    - doc-base
+    - devhelp
+    - libnotify-bin
+    - yelp
+    # X server
+    - xorg
+    - xserver-xorg-legacy
+    - xserver-xorg-video-all
+    - mesa-utils
+    - xfonts-base
+    - xfonts-100dpi
+    - xfonts-75dpi
+    - xfonts-scalable
+    - x11-xserver-utils
+    - xbitmaps
+    - xclip
+    # Remote desktop
+    - xrdp
+    - xorgxrdp
+    # Other stuff
+    - docker.io
+- path: /etc/networkd-dispatcher/routable.d/10-set-dns-search
+  permissions: '0755'
+  content: |
+      #!/bin/sh
+      # networkd-dispatcher sets $IFACE automatically for the interface changing state
+      #
+      # We only care about physical interfaces, not loopback
+      if [ "$IFACE" = "lo" ]; then
+        exit 0
+      fi
+      # Apply the search domain to whatever interface just became routable
+      resolvectl domain "$IFACE" "${dns_zone}"
+runcmd:
+- sed -i~ -e 's/^127\.0\.0\.1\s*.*$/127.0.0.1 localhost '$(uname -n)'/' /etc/hosts
+# We need to do this as cloud-init is ignore package installations
+- apt-get update -y
+- "DEBIAN_FRONTEND=noninteractive apt-get install -y $(sed -e 's/#.*//' -e 's/^ *- / /' /root/pkgs.txt)"
+# Install CES agent
+- >
+    cd /usr/local &&
+    curl -k -O https://uniagent-eu-de.obs.eu-de.otc.t-systems.com/package/agent_install.sh &&
+    bash agent_install.sh
+    -r eu-de -u 0.1.9 -t 2.7.2
+    -o otc.t-systems.com
+    -d agent.ces.${region}.otc.t-systems.com
+
+- service sshd restart
+# Disable graphical login on console
+- systemctl stop lightdm
+- systemctl disable lightdm
+# Make sure that the auto shutdown timer is loaded and enabled...
+- systemctl daemon-reload
+- systemctl enable --now shutdown-at.timer
+# Install ICAgent
+#~ - >
+    #~ curl https://icagent-eu-de.obs.eu-de.otc.t-systems.com/ICAgent_linux/apm_agent_install.sh
+    #~ > apm_agent_install.sh &&
+    #~ REGION=eu-de bash apm_agent_install.sh
+    #~ -ak HPUAUVCDU2PMGV6ZNLHO -sk xlugAfcsXrjlxohqTGANjnjvOeLNvEMVNfANHhay
+    #~ -region eu-de
+    #~ -projectid 30a5224d17f5466490d4977ab0ecda6f
+    #~ -accessip lts-access.eu-de.otc.t-systems.com
+    #~ -obsdomain obs.eu-de.otc.t-systems.com"
+

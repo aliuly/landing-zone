@@ -1,0 +1,249 @@
+#cloud-config
+users:
+- name: ${user}
+  groups: sudo
+  shell: /bin/bash
+  sudo: ['ALL=(ALL) NOPASSWD:ALL']
+  passwd: "${passwd}"
+  lock_passwd: false
+  ssh_authorized_keys:
+%{ for key in ssh_keys ~}
+  - "${key}"
+%{ endfor ~}
+
+#~ # This is not working!
+#~ package_update: true
+#~ packages:
+  #~ ...
+
+
+# Identify and format the disk ONLY if it has no filesystem
+fs_setup:
+  - label: data_disk
+    filesystem: 'xfs'
+    device: ${device_path}
+    partition: auto
+    overwrite: false  # CRITICAL: This prevents data loss on recreation
+
+# Mount the disk
+mounts:
+  - [ ${device_path}, /mnt/data, "xfs", "defaults,nofail", "0", "2" ]
+
+
+write_files:
+- path: /root/pkgs.txt
+  permissions: '0644'
+  content: |
+    - nginx
+    - curl
+    - pwgen
+    - micro
+    - python3-venv
+    - zip
+    - dos2unix
+    - wget
+    - rcm
+    # Other stuff
+    - docker.io
+    - docker-compose-v2
+    # Install cert tools
+    - python3-certbot-nginx
+    - ssl-cert
+
+- path: /tmp/le.sh
+  permissions: '0755'
+  content: |
+    #!/bin/sh
+    [ $# -ne 0 ] && sleep "$1"
+    # 3. Run Certbot non-interactively
+    # --nginx: Automatically configures Nginx for HTTPS
+    # --agree-tos: Accept the Terms of Service
+    # -m: Your email for renewal/security notices
+    # -n: Non-interactive mode
+    #~ certbot --nginx \
+        #~ -d "${dnsname}" \
+        #~ -m "${ca_email}" \
+        #~ --agree-tos \
+        #~ -n --redirect "$@"
+    #
+    certbot \
+        -d "${dnsname}" \
+        -m "${ca_email}" \
+        --preferred-challenges dns \
+        --manual -i nginx \
+        --manual-auth-hook "tcloudpublic-cerbot-helper.sh auth" \
+        --manual-cleanup-hook "tcloudpublic-cerbot-helper.sh clean" \
+        --agree-tos --no-eff-email \
+        -n --redirect $STAGING
+    certbot \
+        -d "${intname}" \
+        -m "${ca_email}" \
+        --preferred-challenges dns \
+        --manual -i nginx \
+        --manual-auth-hook "tcloudpublic-cerbot-helper.sh auth" \
+        --manual-cleanup-hook "tcloudpublic-cerbot-helper.sh clean" \
+        --agree-tos --no-eff-email \
+        -n $STAGING
+    systemctl restart nginx
+
+- path: /tmp/authentik.sh
+  permissions: '0755'
+  content: |
+    #!/bin/sh
+    die() { echo "$@" ; exit 1; }
+    [ ! -d /mnt/data ] && die "Missing mount point"
+    mountpoint -q "/mnt/data" || die "Filesystem not mounted"
+    #
+    stack_dir=/mnt/data/authentik
+    if [ ! -d "$stack_dir" ] ; then
+      # Oh... we need to initialize things
+      mkdir -p "$stack_dir"
+      wget -O"$stack_dir/compose.template" https://docs.goauthentik.io/compose.yml
+      sed -e 's!- database:!- ./database:!' < "$stack_dir/compose.template" > "$stack_dir/compose.yml"
+      # Configure environment
+      echo "
+        PG_PASS=$(openssl rand -base64 36 | tr -d '\n')
+        AUTHENTIK_SECRET_KEY=$(openssl rand -base64 60 | tr -d '\n')
+        AUTHENTIK_ERROR_REPORTING__ENABLED=true
+        # Bootstrap
+        AUTHENTIK_BOOTSTRAP_PASSWORD=$(openssl rand -base64 18 | tr -d '\n')
+        # Configure custom ports
+        # COMPOSE_PORT_HTTP=80
+        # COMPOSE_PORT_HTTPS=443
+        # TODO: e-mail config
+      " | sed 's/^ *//' > "$stack_dir/.env"
+    fi
+    cd "$stack_dir"
+    mkdir -p certs custom-templates data database
+    docker compose pull
+    docker compose up -d
+- path: /tmp/idp.conf
+  permissions: '0644'
+  content: |
+    server {
+      listen 80 default_server;
+      listen [::]:80 default_server;
+      root /var/www/html;
+      # Add index.php to the list if you are using PHP
+      index index.html index.htm index.nginx-debian.html;
+      server_name ${dnsname};
+      location / {
+        # First attempt to serve request as file, then
+        # as directory, then fall back to displaying a 404.
+        try_files $uri $uri/ =404;
+      }
+    }
+    server {
+      listen 443 ssl;
+      server_name ${dnsname};
+      ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
+      ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+      location / {
+          proxy_pass http://127.0.0.1:9000;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+    }
+    server {
+      listen 443 ssl;
+      server_name ${intname};
+      ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
+      ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+      location / {
+          proxy_pass http://127.0.0.1:9000;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+    }
+- path: /etc/networkd-dispatcher/routable.d/10-set-dns-search
+  permissions: '0755'
+  content: |
+      #!/bin/sh
+      # networkd-dispatcher sets $IFACE automatically for the interface changing state
+      #
+      # We only care about physical interfaces, not loopback
+      if [ "$IFACE" = "lo" ]; then
+        exit 0
+      fi
+      # Apply the search domain to whatever interface just became routable
+      resolvectl domain "$IFACE" "${dns_zone}"
+
+- path: /tmp/le-persist.sh
+  permissions: '0755'
+  content: |
+    #!/bin/sh
+    if [ ! -d /mnt/data ] ; then
+      echo "No persistent data volume!"
+      exit 0
+    fi
+    if [ -d /etc/letsencrypt ] ; then
+      if [ -L /etc/letsencrypt ] ; then
+        echo "Already set-up correctly?"
+        exit 0
+      fi
+      if [ ! -d /mnt/data/letsencrypt ] ; then
+        # No persistent data yet
+        cp -av /etc/letsencrypt /mnt/data/letsencrypt
+      fi
+      # Remove existing letsencrypt directory...
+      rm -rf /etc/letsencrypt
+    else
+      mkdir -p /mnt/data/letsencrypt
+    fi
+    ln -s /mnt/data/letsencrypt /etc/letsencrypt
+
+runcmd:
+- sed -i~ -e 's/^127\.0\.0\.1\s*.*$/127.0.0.1 localhost '$(uname -n)'/' /etc/hosts
+# We need to do this as cloud-init is ignore package installations
+- apt-get update -y
+- "DEBIAN_FRONTEND=noninteractive apt-get install -y $(sed -e 's/#.*//' -e 's/^ *- / /' /root/pkgs.txt)"
+
+# Needed for docker config
+- usermod -aG docker clouduser
+
+# Configure nginx and stuff...
+- systemctl enable nginx
+- systemctl start nginx
+- rm -f /etc/nginx/sites-enabled/default
+- cp -av /tmp/idp.conf /etc/nginx/sites-available/idp
+- ln -s ../sites-available/idp /etc/nginx/sites-enabled/idp
+- systemctl restart nginx
+- "echo '<h1>Deployed on T Cloud Public</h1><p>Instance: ${hostname}</p>' > /var/www/html/index.html"
+
+# Configure storage
+- mkdir -p /mnt/data
+- "echo 'Data disk is mounted at /mnt/data' > /mnt/data/status.txt"
+
+# Authentik
+- snap install yq
+- sh /tmp/authentik.sh
+#~ - "( v=/mnt/data/authentik ; mkdir -p $v && cd $v && mkdir certs custom-templates data database ; /tmp/authentik.sh $v)"
+
+# Install CES agent
+- >
+    cd /usr/local &&
+    curl -k -O https://uniagent-eu-de.obs.eu-de.otc.t-systems.com/package/agent_install.sh &&
+    bash agent_install.sh
+    -r eu-de -u 0.1.9 -t 2.7.2
+    -o otc.t-systems.com
+    -d agent.ces.${region}.otc.t-systems.com
+#
+# Used for Issue Let's encrypt certs
+#
+- wget -O/usr/local/bin/curler.py https://raw.githubusercontent.com/alejandroliu/0ink.net/refs/heads/main/snippets/2026/curler.py
+- chmod 755 /usr/local/bin/curler.py
+- wget -O/usr/local/bin/tcloudpublic-cerbot-helper.sh https://raw.githubusercontent.com/alejandroliu/0ink.net/refs/heads/main/snippets/2026/tcloudpublic-cerbot-helper.sh
+- chmod 755 /usr/local/bin/tcloudpublic-cerbot-helper.sh
+- sh /tmp/le-persist.sh
+
+# We run this in the background because we need to wait for
+# the port mappings to be created...
+# We tested that it takes about 8 seconds to create each mapping
+# and we have 3 of them...
+- "env ${ testing_tls ? "STAGING=--staging" : ""} /tmp/le.sh 24 &"
+
+
