@@ -299,4 +299,5 @@ Internal hosts use the short name; external access uses the `www-` prefixed name
 - [ ] split-horizon DNS (internal vs. external zones)
 - [ ] rdesktop => jumpserver
 - [ ] Compliance as code hardening
+- [ ] EVS encryption
 
