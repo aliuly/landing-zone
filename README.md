@@ -289,11 +289,14 @@ Internal hosts use the short name; external access uses the `www-` prefixed name
   and keep data.
   - move IDP data
   - Keep TLS certs here
+- [ ] configure logtank service
 
 ***
 
 * External hosts are www-name, internal hosts just name.
 
-# Ideas
+# More work
 - [ ] split-horizon DNS (internal vs. external zones)
 - [ ] rdesktop => jumpserver
+- [ ] Compliance as code hardening
+
