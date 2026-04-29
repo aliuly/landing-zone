@@ -300,4 +300,5 @@ Internal hosts use the short name; external access uses the `www-` prefixed name
 - [ ] rdesktop => jumpserver
 - [ ] Compliance as code hardening
 - [ ] EVS encryption
+- [ ] Split deployment description from AWS state
 
