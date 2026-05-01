@@ -302,3 +302,18 @@ Internal hosts use the short name; external access uses the `www-` prefixed name
 - [ ] EVS encryption
 - [ ] Split deployment description from AWS state
 
+# Landing Zone concept
+
+* Central Enterprise Router - Hub
+	* Alternate: Use a Hub VPC
+* Attachments:
+	* VPC
+	* VPN - Uses an  _Access_ VPC
+	* Virtual Gateway (Direct Connect)
+	* CFW - Cloudia says a VPC is required
+		* **This needs to be created from Enterprise Router**
+		* Firewall VPC with CFW in Enterprise Router mode
+		* Alternate: Replace CFW with customer custom VM
+* VPC with Jump server and IdP
+* VPC with VPN
+* VPC with

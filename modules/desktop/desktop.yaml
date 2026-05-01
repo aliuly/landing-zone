@@ -112,6 +112,11 @@ write_files:
       fi
       # Apply the search domain to whatever interface just became routable
       resolvectl domain "$IFACE" "${dns_zone}"
+- path: /tmp/trust-staging.sh
+  permissions: '0755'
+  content: ${trust_staging}
+  encoding: gz+b64
+
 runcmd:
 - sed -i~ -e 's/^127\.0\.0\.1\s*.*$/127.0.0.1 localhost '$(uname -n)'/' /etc/hosts
 # We need to do this as cloud-init is ignore package installations

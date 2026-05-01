@@ -2,6 +2,16 @@
 # Compute: The VM (Elastic Cloud Server)
 locals {
   vm_name = "rdesktop1"
+
+  user_data = replace(templatefile("${path.module}/desktop.yaml", {
+      user = var.cloud_user.name
+      passwd = var.cloud_user.passwd
+      ssh_keys = var.cloud_user.ssh_keys
+      more_users = var.local_users
+      dns_zone = var.dns_zone
+      region = var.region
+      trust_staging = base64gzip(file("${path.module}/trust-le-staging.sh"))
+    }), "\r", "")
 }
 
 resource "opentelekomcloud_compute_instance_v2" "desktop_vm" {
@@ -24,14 +34,7 @@ resource "opentelekomcloud_compute_instance_v2" "desktop_vm" {
   }
 
   # Cloud-init configuration
-  user_data = replace(templatefile("${path.module}/desktop.yaml", {
-      user = var.cloud_user.name
-      passwd = var.cloud_user.passwd
-      ssh_keys = var.cloud_user.ssh_keys
-      more_users = var.local_users
-      dns_zone = var.dns_zone
-      region = var.region
-    }), "\r", "")
+  user_data = local.user_data
   tags = var.common_tags
 }
 
