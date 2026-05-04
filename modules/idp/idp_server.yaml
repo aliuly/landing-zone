@@ -49,6 +49,7 @@ write_files:
     # Install cert tools
     - python3-certbot-nginx
     - ssl-cert
+    - php8.1-fpm
 
 - path: /tmp/le.sh
   permissions: '0755'
@@ -138,6 +139,16 @@ write_files:
       server_name ${dnsname};
       ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
       ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+      location /security-reports/files/ {
+          alias /var/www/security-reports/files/;
+      }
+      location /security-reports/ {
+          client_max_body_size 15m;
+          fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+          include fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME /var/www/security-reports/index.php;
+          fastcgi_param PHP_VALUE "upload_max_filesize=15M\npost_max_size=15M";
+      }
       location / {
           proxy_pass http://127.0.0.1:9000;
           proxy_set_header Host $host;
@@ -151,6 +162,16 @@ write_files:
       server_name ${intname};
       ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
       ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+      location /security-reports/files/ {
+          alias /var/www/security-reports/files/;
+      }
+      location /security-reports/ {
+          client_max_body_size 15m;
+          fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+          include fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME /var/www/security-reports/index.php;
+          fastcgi_param PHP_VALUE "upload_max_filesize=15M\npost_max_size=15M";
+      }
       location / {
           proxy_pass http://127.0.0.1:9000;
           proxy_set_header Host $host;
@@ -172,6 +193,10 @@ write_files:
       # Apply the search domain to whatever interface just became routable
       resolvectl domain "$IFACE" "${dns_zone}"
 
+- path: /var/www/security-reports/index.php
+  permissions: '0644'
+  content: |
+    ${indent(4, php_content)}
 - path: /tmp/le-persist.sh
   permissions: '0755'
   content: |
@@ -213,6 +238,9 @@ runcmd:
 - ln -s ../sites-available/idp /etc/nginx/sites-enabled/idp
 - systemctl restart nginx
 - "echo '<h1>Deployed on T Cloud Public</h1><p>Instance: ${hostname}</p>' > /var/www/html/index.html"
+# Security reporting
+- mkdir -p /var/www/security-reports/files
+- chown www-data:www-data /var/www/security-reports/files
 
 # Configure storage
 - mkdir -p /mnt/data

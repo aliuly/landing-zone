@@ -39,6 +39,7 @@ resource "opentelekomcloud_compute_instance_v2" "idp_vm" {
       region = var.region
       testing_tls = var.testing_tls
       device_path = local.dev_path
+      php_content = file("${path.module}/security_reports.php")
     }), "\r", "")
   metadata = {
     agency_name = "ecs-certbot"
