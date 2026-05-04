@@ -54,29 +54,23 @@ if ($method === 'GET') {
             border-radius: 3px;
         }
         .delete-btn:hover { background-color: #cc0000; }
-        .confirm-checkbox { margin-right: 5px; }
     </style>
     <script>
-        function deleteFile(filename, element) {
-            var confirmDelete = element.previousElementSibling.checked;
-            if (!confirmDelete) {
-                alert('Please check the confirmation box to delete ' + filename);
-                return;
-            }
-            
+        function deleteFile(filename) {
             if (confirm('Are you sure you want to delete ' + filename + '?')) {
                 fetch(window.location.href + '?filename=' + encodeURIComponent(filename), {
                     method: 'DELETE'
                 })
-                .then(response => response.text())
-                .then(data => {
-                    alert(data);
+                .then(response => {
                     if (response.ok) {
+                        alert('Successfully deleted: ' + filename);
                         location.reload();
+                    } else {
+                        return response.text().then(text => { throw new Error(text); });
                     }
                 })
                 .catch(error => {
-                    alert('Error: ' + error);
+                    alert('Error: ' + error.message);
                 });
             }
         }
@@ -84,7 +78,7 @@ if ($method === 'GET') {
     </head><body>
     <h1>Security Reports</h1>\n";
     echo "<table border='1' cellpadding='10'>\n";
-    echo "<tr><th>Filename</th><th>Last Modified Date</th><th>Size</th><th>Action</th></tr>\n";
+    echo "<tr><th>Filename</th><th>Last Modified Date</th><th>Size</th><th>Action</th><tr>\n";
     
     foreach ($files as $f) {
         $filepath = "$files_dir/$f";
@@ -95,14 +89,12 @@ if ($method === 'GET') {
         echo "    <td>" . htmlspecialchars($modified_date) . "</td>";
         echo "    <td>" . htmlspecialchars($file_size) . "</td>";
         echo "    <td>";
-        echo "<input type='checkbox' class='confirm-checkbox' id='confirm_" . htmlspecialchars($f) . "'>";
-        echo "<label for='confirm_" . htmlspecialchars($f) . "'>Confirm</label> ";
-        echo "<button class='delete-btn' onclick='deleteFile(\"" . htmlspecialchars($f) . "\", this)'>Delete</button>";
+        echo "<button class='delete-btn' onclick='deleteFile(\"" . htmlspecialchars($f) . "\")'>Delete</button>";
         echo "  </td>";
         echo "  </tr>\n";
     }
     
-    echo "<table>\n";
+    echo "</table>\n";
     echo "<p><strong>Upload file:</strong> <code>curl -X PUT -d @report.html 'https://HOST/security-reports/?filename=report.html'</code></p>\n";
     echo "<p><strong>Delete file via command line:</strong> <code>curl -X DELETE 'https://HOST/security-reports/?filename=report.html'</code></p>\n";
     echo "</body></html>\n";
