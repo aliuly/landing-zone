@@ -220,6 +220,17 @@ write_files:
       mkdir -p /mnt/data/letsencrypt
     fi
     ln -s /mnt/data/letsencrypt /etc/letsencrypt
+#
+# Used for Issue Let's encrypt certs
+#
+- path: /usr/local/bin/curler.py
+  permissions: '0755'
+  content: |
+    ${indent(4, curler_py)}
+- path: /usr/local/bin/tcloudpublic-cerbot-helper.sh
+  permissions: '0755'
+  content: |
+    ${indent(4, certbot_helper)}
 
 runcmd:
 - sed -i~ -e 's/^127\.0\.0\.1\s*.*$/127.0.0.1 localhost '$(uname -n)'/' /etc/hosts
@@ -262,10 +273,6 @@ runcmd:
 #
 # Used for Issue Let's encrypt certs
 #
-- wget -O/usr/local/bin/curler.py https://raw.githubusercontent.com/alejandroliu/0ink.net/refs/heads/main/snippets/2026/curler.py
-- chmod 755 /usr/local/bin/curler.py
-- wget -O/usr/local/bin/tcloudpublic-cerbot-helper.sh https://raw.githubusercontent.com/alejandroliu/0ink.net/refs/heads/main/snippets/2026/tcloudpublic-cerbot-helper.sh
-- chmod 755 /usr/local/bin/tcloudpublic-cerbot-helper.sh
 - sh /tmp/le-persist.sh
 
 # We run this in the background because we need to wait for

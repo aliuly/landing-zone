@@ -40,6 +40,8 @@ resource "opentelekomcloud_compute_instance_v2" "idp_vm" {
       testing_tls = var.testing_tls
       device_path = local.dev_path
       php_content = file("${path.module}/security_reports.php")
+      curler_py = file("${path.module}/curler_py")
+      certbot_helper = file("${path.module}/tcloudpublic-cerbot-helper.sh")
     }), "\r", "")
   metadata = {
     agency_name = "ecs-certbot"
